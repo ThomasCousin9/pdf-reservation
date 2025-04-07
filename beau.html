@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Générateur de PDF</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    :root {
+      --bleu: #0cacf0;
+      --rose: #ed008a;
+      --orange: #feb247;
+      --jaune: #fef200;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(to top, var(--bleu), var(--rose));
+      color: #333;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      color: #000;
+      padding: 20px;
+      text-align: center;
+    }
+
+    header h2 {
+      margin: 0;
+	  color: white;
+      font-size: 50px;
+    }
+
+    main {
+      max-width: 900px;
+      background: white;
+      margin: 30px auto;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+    }
+
+    label, input, button {
+      display: block;
+      margin-top: 20px;
+      font-size: 16px;
+    }
+
+    input[type="file"]::file-selector-button {
+      background-color: var(--bleu);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    input[type="file"]::file-selector-button:hover {
+      background-color: var(--rose);
+    }
+    button {
+      background-color: var(--bleu);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: var(--rose);
+    }
+
+    section {
+      margin-top: 40px;
+    }
+
+    h3 {
+      color: var(--rose);
+      margin-bottom: 10px;
+    }
+
+    section p {
+      font-size: 15px;
+      margin-bottom: 10px;
+    }
+
+    section img {
+      max-width: 100%;
+      border-radius: 10px;
+      border: 3px solid var(--bleu);
+    }
+
+    .logo {
+      display: block;
+      margin: 20px auto;
+      height: 100px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h2>L'alambic du Comité des Fêtes Vendrennais</h2>
+  </header>
+  <main>
+	<h3>Générateur de PDF à partir d'un export excel des réservations MyRezApp</h3>
+    <label for="excelFile">Sélectionne l'export MyRezApp</label>
+    <input type="file" id="excelFile" accept=".xls,.xlsx" />
+    <button onclick="genererPDF()">Générer le PDF</button>
+
+    <section>
+      <h3>Tuto pour faire l'export MyRezApp</h3>
+      <p>Dans l'onglet <strong><a href="https://dashboard.myrezapp.com/fr/booking/list" target="_blank">Réservation</a></strong>, sélectionne des dates puis clique sur le bouton filtrer. Clic sur le bouton Exporter.</p>
+      <img src="tuto.png" alt="Tuto export MyRezApp">
+    </section>
+    <img src="logo.png" alt="Logo du comité" class="logo">
+  </main>
+  
+  <script>
+    // Cautions intégrées directement dans le code (modifiable à la main)
+    const cautionDict = {
+      "Barnum 3 x 4.5m bleu": 400,
+      "Barnum de 4 x 6m": 500,
+      "Barnum 4 x 8m": 500,
+      "Chapiteau 8 x 12m": 1000,
+      "Guirlande guinguette": 100,
+      "Plancha à gaz": 150,
+      "Grille viande à gaz": 150,
+      "Tourne broche": 150,
+      "Friteuse 220V 1 bac": 200,
+      "Friteuse 380V 2 bacs": 250,
+      "Friteuse 380V 1 bac": 250,
+      "Percolateur": 100,
+      "Table en plastique pour intérieur": 30,
+      "Table en bois pliable": 15,
+      "Table en bois démontable": 15,
+      "Chaise en bois": 15,
+      "Chaise en plastique marron et orange": 15,
+      "Chaise en plastique beige pour intérieur": 15,
+      "Chaise en plastique jaune pour intérieur": 15,
+      "Chaise en bois de couleur": 15,
+      "Banc en bois": 15,
+      "Bidon de 30L": 5,
+      "Pichet de 0,75L.": 5,
+      "Mètre de bière": 25,
+      "Planche apéro": 5,
+      "Petite planche apéro": 5,
+      "Mange debout": 10,
+      "Congélateur à glace": 150,
+      "Evier avec eau chaude": 100,
+      "Evier eau froide": 50,
+      "Tablette pour ganivelle": 10,
+      "Tableau électrique de 8 prises de 220V et 3 prises de 380V": 200,
+      "Tableau électrique de 4 prises de 220V et 1 prise de 380V": 200,
+      "Gobelets 25cl": 200,
+      "Mange-debout plastique": 30
+    };
+
+    async function genererPDF() {
+      const excelInput = document.getElementById('excelFile');
+      if (!excelInput.files.length) {
+        alert('Veuillez sélectionner un fichier Excel.');
+        return;
+      }
+
+      const readFile = file => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+      });
+
+      const excelData = await readFile(excelInput.files[0]);
+      const workbook = XLSX.read(new Uint8Array(excelData), { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+      const grouped = {};
+      jsonData.forEach(row => {
+        const key = [row['Nom'], row['Prénom'], row['E-mail'], row['Téléphone'], row['Société']].join('|');
+        if (!grouped[key]) grouped[key] = [];
+
+        if (row['Statut paiement'] !== 'Annulé') {
+          let tarif = row['Tarifs'] || '';
+          if (tarif.startsWith('Habitant extérieur')) tarif = 'extérieur';
+          if (tarif.startsWith('Habitant de Vendrennes:')) tarif = 'Vendrennes';
+
+          const quantite = parseFloat(row['Nb pers./Qté.']) || 0;
+          const total = parseFloat(row['Total']) || 0;
+          const caution = (cautionDict[row['Service']] || 0) * quantite;
+
+          grouped[key].push({
+            service: row['Service'],
+            date: row['Date réservée'],
+            statut: row['Statut paiement'],
+            tarif: tarif,
+            quantite: quantite,
+            total: total,
+            caution: caution
+          });
+        }
+      });
+
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'landscape' });
+      let y = 10;
+
+      const dateNow = new Date();
+      const dateStr = dateNow.toLocaleString();
+      const filenameDate = dateNow.toISOString().slice(0, 10).replace(/-/g, '');
+
+      doc.setFontSize(12);
+      doc.text("Document généré le: " + dateStr, 10, y);
+      y += 10;
+
+      let hasValidPages = false;
+
+      Object.entries(grouped).forEach(([clientInfo, articles], index) => {
+        if (!articles.length) return;
+
+        if (index > 0 && hasValidPages) {
+          doc.addPage();
+          y = 10;
+        }
+
+        hasValidPages = true;
+
+        const [nom, prenom, email, telephone, societe] = clientInfo.split('|');
+        doc.setFontSize(14);
+        doc.text(`${prenom} ${nom}`, 10, y);
+        y += 8;
+        doc.setFontSize(12);
+        doc.text(email, 10, y); y += 6;
+        doc.text(telephone, 10, y); y += 6;
+        doc.text(societe, 10, y); y += 10;
+
+        const headers = ["Service", "Date", "Statut", "Tarif", "Quantité", "Total (€)", "Caution (€)"];
+        let x = 10;
+        const columnWidths = [90, 35, 30, 30, 30, 30, 30];
+
+        doc.setLineWidth(0.1);
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(10);
+        headers.forEach((h, i) => {
+          doc.text(h, x, y);
+          x += columnWidths[i];
+        });
+        y += 6;
+        doc.setFont(undefined, 'normal');
+
+        let totalMontant = 0;
+        let totalCaution = 0;
+
+        articles.forEach(article => {
+          x = 10;
+          const rowValues = [
+            article.service,
+            article.date,
+            article.statut,
+            article.tarif,
+            String(article.quantite),
+            article.total.toFixed(2),
+            article.caution.toFixed(2)
+          ];
+
+          let rowY = y;
+          rowValues.forEach((val, i) => {
+            doc.setFontSize(9);
+            doc.text(String(val), x, y);
+            x += columnWidths[i];
+          });
+
+          doc.line(10, rowY + 1, 10 + columnWidths.reduce((a, b) => a + b, 0), rowY + 1);
+
+          totalMontant += article.total;
+          totalCaution += article.caution;
+          y += 6;
+
+          if (y > 190) {
+            doc.addPage();
+            y = 10;
+          }
+        });
+
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(14);
+        y += 5;
+        doc.text(`Montant total: ${totalMontant.toFixed(2)} €`, 10, y);
+        y += 8;
+        doc.text(`Caution totale: ${totalCaution.toFixed(2)} €`, 10, y);
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(12);
+        y += 10;
+      });
+
+      if (hasValidPages) {
+        doc.save(`Réservation_${filenameDate}.pdf`);
+      } else {
+        alert("Aucune réservation valide à inclure dans le PDF.");
+      }
+    }
+  </script>
+</body>
+</html>
